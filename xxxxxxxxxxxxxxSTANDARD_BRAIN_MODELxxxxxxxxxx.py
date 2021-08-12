@@ -194,13 +194,7 @@ import nibabel as nib
 from nilearn import plotting
 file_name = ntpath.basename(__file__)[:-3]
 save_folder = "C:/Users/Martin/Desktop/results_final"
-from importance import input_importance,eval_importance
-
-
-def calculate_noise_adjustment(learn,valid_ds,input_dim=30000):
-    importance = input_importance(learn.model,valid_ds,num_iterations=100,input_dim=input_dim).numpy()
-    return importance
-
+from importance import noise_adjustment_global,eval_importance
 
 from data.data_utils import save_pickle
 from data.brainloading import load_reliability_mask,map2cube
@@ -229,7 +223,7 @@ def visualize_importance(importance,out_file):
 
 
 #%%
-im_noise_adjustment = calculate_noise_adjustment(learn,valid_ds,input_dim=30000)
+im_noise_adjustment = noise_adjustment_global(valid_ds,learn.model,input_dim=input_dim).numpy()
 visualize_importance(im_noise_adjustment,"noise_adj_importance_vis.png")
 
 #%%
