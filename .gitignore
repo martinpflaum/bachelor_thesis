@@ -1,0 +1,13 @@
+*/hrnet_w18_small_model_v2.pth
+*.pth
+*.png
+network-snapshot-001600.pkl
+network-snapshot-002000.pkl
+network-snapshot-001000.pkl
+network-snapshot-001000.pkl
+scene_depth_gan_2000.pkl
+vgg16.pt
+default_gan_2000.pkl
+scene_depth_gan_4000.pkl
+network-snapshot-000800.pkl
+xx1miocubes.pkl
