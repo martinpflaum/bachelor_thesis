@@ -164,12 +164,12 @@ def main(task):
     
     learn = Learner(dls,model,loss_func = loss_func)
     apply_mod(learn.model.gen, partial(set_absolute_grad, b = False))
-    learn.fit(65)
+    learn.fit(80)
     learn.save(f"{task}_learner")
 
 if __name__ == '__main__':
-    #main("scene_depth")
-    pass
+    main("scene_depth")
+    
 # %%
 task = "scene_depth"
 train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
@@ -233,47 +233,6 @@ from eval_metrics import run_all_metrics
 
 run_all_metrics(save_folder,learn,valid_ds,file_name)
 
-#%%
-"""
-def convert_dset_to_numpy(dset):
-    x_valid_np = []
-    y_valid_np = []
-
-    for x,y in dset:
-        x_valid_np += [x[None].cpu()]
-        y_valid_np += [y[None].cpu()]
-        
-    x_valid_np = torch.cat(x_valid_np,dim=0).detach().numpy()
-    y_valid_np = torch.cat(y_valid_np,dim=0).detach().numpy()
-    return x_valid_np,y_valid_np
-
-
-x_valid_np,y_valid_np = convert_dset_to_numpy(valid_ds)
-
-class ForceFP32(nn.Module):
-    def __init__(self,model):
-        super().__init__()
-        self.model = model
-    def forward(self,x):
-        return self.model(x,force_fp32=True)
-
-        
-
-import sage
-import gc
-model = ForceFP32(learn.model.cpu())
-dls = None
-learn = None
-gc.collect()
-imputer = sage.MarginalImputer(model, x_valid_np[:64])
-estimator = sage.PermutationEstimator(imputer, 'mse')
-sage_values = estimator(x_valid_np,y_valid_np, batch_size=16, thresh=0.05)
-#save_pickle(importance,"importance_scores")
-
-#eval_importance()
-visualize_importance(im_noise_adjustment,"sage_values.png")"""
-
-
-
-
+view = plotting.view_img_on_surf("./example.nii", threshold='80%', surf_mesh='fsaverage') 
+view.save_as_html(file_name+".html") 
 # %%
