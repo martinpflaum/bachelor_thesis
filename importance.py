@@ -19,27 +19,32 @@ def noise_adjustment_local(x_org,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSEL
         g = x.grad.detach() 
         score = torch.abs(g) # $score = \left| \frac{d}{dx'}loss\right|$
         score = torch.mean(score,dim=0) #mean over batch dimension
-        out += score*(1/num_iters) #nummerical stable mean over iterations
+        out += score*(1/num_iters) #mean over iterations
+
+    out = out.cpu().double()
     n_dim = torch.prod(torch.tensor(out.size())) #number of dimensions
     norm = (n_dim**0.5)/torch.norm(out) #scaled normalization
-    return out*norm
+    out = out*norm
+    return out
 
 
-def noise_adjustment_global(dset,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSELoss()):
+def noise_adjustment_global(dset,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSELoss(),device="cuda:0"):
     model = model.eval()
+    model = model.to(device)
     func_args = (model,var,num_iters,bs,l_func) #for smaller line length
 
     xt,_ = dset[0]
-    out = torch.zeros_like(xt)
+    out = torch.zeros_like(xt).cpu().double()
 
     for i,(x_org,_) in enumerate(dset):
-        x_org = x_org.to(model.device) #push the data to the correct device
-        local_score = noise_adjustment_local(x_org,*func_args) 
-        out += local_score*(1/len(dset)) #nummerical stable mean over dset length
+        x_org = x_org.to(device) #push the data to the correct device
+        local_score = noise_adjustment_local(x_org,*func_args)
+        out += local_score*(1/len(dset)) #mean over dset length
 
     n_dim = torch.prod(torch.tensor(out.size())) #number of dimensions
     norm = (n_dim**0.5)/torch.norm(out) #scaled normalization
-    return out*norm
+    out = out*norm
+    return out
 
 
 def eval_importance(model,val_ds,importance,n_keep,loss_func=nn.MSELoss()):

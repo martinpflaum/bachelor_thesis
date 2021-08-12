@@ -132,7 +132,7 @@ def split_layers(model):
 import torch
 from style_gan_2_model import normalize_2nd_moment,FullyConnectedLayer
 
-from batchnorm_mul_bias_brainfeed import Brainfeed
+from brainfeed import Brainfeed
 class GenWrapper(nn.Module):
     def __init__(self,gan_file_name,input_dim=30000):
         super().__init__()
@@ -168,8 +168,8 @@ def main(task):
     learn.save(f"{task}_learner")
 
 if __name__ == '__main__':
-    main("scene_depth")
-
+    #main("scene_depth")
+    pass
 # %%
 task = "scene_depth"
 train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
@@ -193,7 +193,7 @@ import nilearn
 import nibabel as nib
 from nilearn import plotting
 file_name = ntpath.basename(__file__)[:-3]
-save_folder = "C:/Users/Martin/Desktop/results_final"
+save_folder = "img_results"
 from importance import noise_adjustment_global,eval_importance
 
 from data.data_utils import save_pickle
@@ -222,14 +222,16 @@ def visualize_importance(importance,out_file):
     plotting.plot_glass_brain("./example.nii",colorbar=True,output_file=out_file)
 
 
-#%%
-im_noise_adjustment = noise_adjustment_global(valid_ds,learn.model,input_dim=input_dim).numpy()
+im_noise_adjustment = noise_adjustment_global(valid_ds,learn.model).numpy()
 visualize_importance(im_noise_adjustment,"noise_adj_importance_vis.png")
 
-#%%
 for n_keep in [30000,2900,2800,2700,2600,2500,2000,1500,1000,500,200,100]:
     eval_importance(learn.model,valid_ds,torch.tensor(im_noise_adjustment).to("cuda:0"),n_keep=n_keep)
 
+print("valid_ds len",len(valid_ds))
+from eval_metrics import run_all_metrics
+
+run_all_metrics(save_folder,learn,valid_ds,file_name)
 
 #%%
 """
@@ -271,7 +273,7 @@ sage_values = estimator(x_valid_np,y_valid_np, batch_size=16, thresh=0.05)
 #eval_importance()
 visualize_importance(im_noise_adjustment,"sage_values.png")"""
 
-#run_all_metrics(save_folder,learn,valid_ds,file_name)
+
 
 
 # %%
