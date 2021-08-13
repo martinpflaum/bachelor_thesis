@@ -50,7 +50,7 @@ def calc_perc_metric(valid_ds,learn):
     top10 = 0
     for k in range(len(valid_ds)): 
         target = valid_ds[k][1]
-        target = target.to("cpu").reshape(1,1,64,64)
+        target = target.to("cpu")[None]#.reshape(1,1,64,64)
         #print(target.shape)
         diff = torch.mean(((preds-target)**2).reshape(N,-1),dim = -1)
         #print(diff.shape)
@@ -69,7 +69,6 @@ def calc_perc_metric(valid_ds,learn):
     print("top1",top1,"top5",top5,"top10",top10)
 
 
-from data.data_utils import post_load_reverse_depth
 
 def get_mean(valid_ds):
     out = torch.zeros_like(valid_ds[0][1])
@@ -90,30 +89,37 @@ def get_mean_loss(valid_ds,loss_func = nn.MSELoss()):
             loss_out += loss
     print("constant loss of dset: ",loss_out)
 
-def save_single(save_folder,learn,valid_ds,test_name,k,save_k):
+def save_single(save_folder,learn,valid_ds,test_name,k,save_k,reverse_func):
     learn.model = learn.model.to("cuda:0")
     learn.model.eval()
 
     with torch.no_grad():
         input = valid_ds[k][0]
         pred_scene_depth = learn.model(input[None].to("cuda:0"))[0]
-    img_vis = post_load_reverse_depth(pred_scene_depth)[:,:,0]
+    img_vis = reverse_func(pred_scene_depth)
+    if img_vis.shape[2] == 1:
+        img_vis = img_vis[:,:,0]
 
     img = valid_ds[k][1]
     scene_depth = img[None]
-    img_vis_target = post_load_reverse_depth(scene_depth[0])[:,:,0]
+    img_vis_target = reverse_func(scene_depth[0])
+    if img_vis_target.shape[2] == 1:
+        img_vis_target = img_vis_target[:,:,0]
 
     plt.imsave(f"{save_folder}/{test_name}_{save_k}.png",img_vis)
     plt.imsave(f"{save_folder}/target_{save_k}.png",img_vis_target)
 
+def post_load_reverse_identity(img):
+    img = ((img).cpu().permute(1,2,0))
+    return np.array(img)
 
-def save_images(save_folder,learn,valid_ds,test_name,idx = [124,168,3,4]):
+def save_images(save_folder,learn,valid_ds,test_name,idx = [124,168,3,4],reverse_func=post_load_reverse_identity):
     for save_k,k in enumerate(idx): 
-        save_single(save_folder,learn,valid_ds,test_name,k,save_k)
+        save_single(save_folder,learn,valid_ds,test_name,k,save_k,reverse_func)
 
 
-def run_all_metrics(save_folder,learn,valid_ds,file_name):    
-    save_images(save_folder,learn,valid_ds,file_name)
+def run_all_metrics(save_folder,learn,valid_ds,file_name,reverse_func=post_load_reverse_identity):    
+    save_images(save_folder,learn,valid_ds,file_name,reverse_func=reverse_func)
     get_mean_loss(valid_ds)
     calc_perc_metric(valid_ds,learn)
     calc_random_metric(valid_ds,learn)

@@ -98,6 +98,7 @@ def post_load_reverse_depth(img):
     img= ((img).cpu().permute(1,2,0))#/ (1/256 * 3)
     
     return np.array(img)
+
     #((y_pred[0]+1).cpu().permute(1,2,0))/ (2/256 * 3) )
 from scipy.ndimage.filters import convolve, gaussian_filter
 

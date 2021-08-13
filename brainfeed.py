@@ -17,8 +17,8 @@ class Brainfeed(nn.Module):
         self.layers = nn.Sequential(*layers)
         self.final = nn.Sequential(*final)
 
-        self.bias = torch.nn.Parameter(torch.zeros(()))#torch.nn.Parameter
-        self.mul = torch.nn.Parameter(torch.ones(()))
+        self.bias = torch.nn.Parameter(torch.zeros(()))#torch.zeros(())##torch.nn.Parameter
+        self.mul = torch.nn.Parameter(torch.ones(()))#torch.ones(())#
 
     def forward(self,x):
         #if not isinstance(x, list):

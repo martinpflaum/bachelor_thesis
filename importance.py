@@ -4,6 +4,8 @@ import copy
 from matplotlib import pyplot as plt
 from data.data_utils import post_load_reverse_depth
 
+import torch
+import torch.nn as nn
 def noise_adjustment_local(x_org,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSELoss()):
     model = model.eval()
     out = torch.zeros_like(x_org)
@@ -20,15 +22,13 @@ def noise_adjustment_local(x_org,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSEL
         score = torch.abs(g) # $score = \left| \frac{d}{dx'}loss\right|$
         score = torch.mean(score,dim=0) #mean over batch dimension
         out += score*(1/num_iters) #mean over iterations
-
-    out = out.cpu().double()
+    out = out.cpu()
     n_dim = torch.prod(torch.tensor(out.size())) #number of dimensions
     norm = (n_dim**0.5)/torch.norm(out) #scaled normalization
     out = out*norm
     return out
 
-
-def noise_adjustment_global(dset,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSELoss(),device="cuda:0"):
+def noise_adj_global(dset,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSELoss(),device="cuda:0"):
     model = model.eval()
     model = model.to(device)
     func_args = (model,var,num_iters,bs,l_func) #for smaller line length
@@ -39,8 +39,8 @@ def noise_adjustment_global(dset,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSEL
     for i,(x_org,_) in enumerate(dset):
         x_org = x_org.to(device) #push the data to the correct device
         local_score = noise_adjustment_local(x_org,*func_args)
+        #the *-operator will unpack the tuple and call the function with the arguments.
         out += local_score*(1/len(dset)) #mean over dset length
-
     n_dim = torch.prod(torch.tensor(out.size())) #number of dimensions
     norm = (n_dim**0.5)/torch.norm(out) #scaled normalization
     out = out*norm

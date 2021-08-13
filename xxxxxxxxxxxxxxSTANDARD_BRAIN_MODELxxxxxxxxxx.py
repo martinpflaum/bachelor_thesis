@@ -20,7 +20,7 @@ from data.seg_mask_loader import seg_mask_to_color
 from data.data_utils import get_train_val_test_split,open_image,\
     post_load_default,post_load_scene_depth,post_load_normal,\
     post_load_lightning,load_edge_tensor,load_pickle
-from data.brainloading import BrainLoader, BRAIN_FILE_NAME_TRAIN, BRAIN_FILE_NAME_VAL
+from data.brainloading import BrainLoader, BRAIN_FILE_NAME_TRAIN, BRAIN_FILE_NAME_VAL,BRAIN_FILE_NAME_TEST
 from data.list_transforms import LRandomHorizontalFlip,LRandomResizedCrop,LResize,LCompose,LCenterCrop
 
 import random
@@ -31,7 +31,7 @@ def post_load_identity(img):
     return torchvision.transforms.functional.to_tensor(np.array(img))
 
 class BrainDatasetSceneDepth(Dataset):
-    def __init__(self,task,indicies,img_data_set_root,brain_dataset_root,brain_data_file,is_train,input_dim=30000):
+    def __init__(self,task,indicies,img_data_set_root,brain_dataset_root,brain_data_file,is_train,input_dim=30000,stable_loss=False):
         self.img_data_set_root = img_data_set_root
         self.is_train = is_train
 
@@ -40,7 +40,7 @@ class BrainDatasetSceneDepth(Dataset):
         
         if is_train:
             self.multiplier = 3
-        
+        self.stable_loss = stable_loss
 
         self.size = len(indicies)*self.multiplier
         img_size = 64
@@ -55,13 +55,25 @@ class BrainDatasetSceneDepth(Dataset):
         #print("get_len")
         return self.size
     def __getitem__(self, index):
+        magic = [[0,1],[1,2],[2,0]]
         n = index % self.multiplier
         index = index //self.multiplier
         name = self.indicies[index]
     
         
         if self.is_train:
-            x = self.brain_loader(index,n)
+            if not self.stable_loss:
+                x = self.brain_loader(index,n)
+            else:
+                a = magic[n][0]
+                b = magic[n][1]
+                
+                x = []
+                x += [self.brain_loader(index,a)[None]]
+                x += [self.brain_loader(index,b)[None]]
+                x = torch.cat(x,dim=0)
+
+
         else:
             x = []
             x += [self.brain_loader(index,0)[None]]
@@ -145,42 +157,92 @@ class GenWrapper(nn.Module):
         self.num_ws = generator.mapping.num_ws
         
     def forward(self,input,c = None,force_fp32=False):
+        latent_target = None
+        x = input
+        if len(input.shape) == 3:
+            x = input[:,0,:]
+            latent_target = input[:,1,:]
+            self.backbone = self.backbone.eval()#removes dropout
+            latent_target = self.backbone(latent_target)
+            self.backbone = self.backbone.train()
         
-        x = self.backbone(input)
+        x = self.backbone(x)
         out = self.gen(x,c=None,force_fp32=force_fp32)
         out = out * self.mul + self.bias
-        return out
-
+        if latent_target is None:            
+            return out
+        else:
+            return (out,x,latent_target)
 #%%
 
-def main(task):
+from stable_loss import StableLoss
+input_dim = 2048*8
+task = "scene_depth"
+enable_stable_loss = False
+train_gan = False
+
+
+
+pretrained_gen = None 
+
+if pretrained_gen is None:
+    pretrained_gen = f"{task}_gan_2000.pkl"
+
+
+learn_save_file = None
+if learn_save_file is None:
+    learn_save_file = f"{task}_learner"
+
+
+def main(task,input_dim):
     train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
-    train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True)#True
-    valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False)
+    train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim)#True
+    valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
 
     dls = DataLoaders.from_dsets(train_ds, valid_ds, batch_size = 16,num_workers = 0,device="cuda:0")
-    model = GenWrapper(f"{task}_gan_2000.pkl")
-    loss_func = nn.MSELoss()
+    model = GenWrapper(pretrained_gen,input_dim=input_dim)
+    loss_func = None
+    if enable_stable_loss:
+        loss_func = StableLoss()
+    else:
+        loss_func = nn.MSELoss()
     
     learn = Learner(dls,model,loss_func = loss_func)
     apply_mod(learn.model.gen, partial(set_absolute_grad, b = False))
-    learn.fit(80)
-    learn.save(f"{task}_learner")
-
-if __name__ == '__main__':
-    main("scene_depth")
     
+    if enable_stable_loss:
+        for epochs,alpha,train_gan_now in [(10,0.,False),(10,0.1,False),(10,0.2,False),(10,0.5,True),(40,1.0,True)]:
+            if train_gan and train_gan_now:
+                apply_mod(learn.model.gen, partial(set_absolute_grad, b = True))
+                
+            loss_func.alpha = alpha
+            learn.fit(epochs)
+    else:
+        if train_gan:
+            learn.fit(60)
+            apply_mod(learn.model.gen, partial(set_absolute_grad, b = True))
+            learn.fit(20)
+                
+        else:
+            learn.fit(80)
+    
+    learn.save(learn_save_file)
+
+#main(task,input_dim)    
 # %%
-task = "scene_depth"
+
+
 train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
-train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True)#True
-valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False)
+train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim)#True
+valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
+#test_ds = BrainDatasetSceneDepth(task,test,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TEST,False,input_dim=input_dim)
+
 #%%
 dls = DataLoaders.from_dsets(train_ds, valid_ds, batch_size = 8,num_workers = 0,device="cuda:0")
-model = GenWrapper(f"{task}_gan_2000.pkl")
+model = GenWrapper(pretrained_gen,input_dim=input_dim)
 loss_func = nn.MSELoss()
 learn = Learner(dls,model,loss_func = loss_func)
-learn.load(f"{task}_learner")
+learn.load(learn_save_file)
 learn.model = learn.model.to("cuda:0")
 learn.model.eval()
 #%%
@@ -194,13 +256,16 @@ import nibabel as nib
 from nilearn import plotting
 file_name = ntpath.basename(__file__)[:-3]
 save_folder = "img_results"
-from importance import noise_adjustment_global,eval_importance
+from importance import noise_adj_global,eval_importance
 
 from data.data_utils import save_pickle
 from data.brainloading import load_reliability_mask,map2cube
+import time
+
+import os
 
 
-def visualize_importance(importance,out_file):
+def visualize_importance(importance,out_file,n_input,cmap=None):
     def saveasnii(brain_mask,nii_save_path,nii_data):
         img = nib.load(brain_mask)
         print(img.shape)
@@ -209,7 +274,6 @@ def visualize_importance(importance,out_file):
 
     brain_data_root = "D:/Datasets/BrainData"
     subject = 3
-    n_input = 30000
     rel_mask = load_reliability_mask(brain_data_root,n = n_input,subject = subject)
     out = np.zeros((100045))
     out[rel_mask] = importance
@@ -219,17 +283,34 @@ def visualize_importance(importance,out_file):
                 
     cube_data = map2cube(out,mask_path, nan_indices_path)
     saveasnii(mask_path,"./example.nii",cube_data)
-    plotting.plot_glass_brain("./example.nii",colorbar=True,output_file=out_file)
+    try:
+        os.remove(out_file)
+    except:
+        pass
+    time.sleep(2)
+    plotting.plot_glass_brain("./example.nii",colorbar=True,cmap=cmap,output_file=out_file)
 
 
-im_noise_adjustment = noise_adjustment_global(valid_ds,learn.model).numpy()
-visualize_importance(im_noise_adjustment,"noise_adj_importance_vis.png")
+
+im_noise_adjustment = noise_adj_global(valid_ds,learn.model).numpy()
+#%%
+
+print(im_noise_adjustment)
+#%%
+#from matplotlib.colors import LinearSegmentedColormap
+#cmap = plt.cm.datad["winter"]
+#cmap = LinearSegmentedColormap("winter",cmap)
+
+visualize_importance(im_noise_adjustment,"noise_adj_importance_vis.png",input_dim)
 
 for n_keep in [30000,2900,2800,2700,2600,2500,2000,1500,1000,500,200,100]:
     eval_importance(learn.model,valid_ds,torch.tensor(im_noise_adjustment).to("cuda:0"),n_keep=n_keep)
 
 print("valid_ds len",len(valid_ds))
+
+#%%
 from eval_metrics import run_all_metrics
+
 
 run_all_metrics(save_folder,learn,valid_ds,file_name)
 
