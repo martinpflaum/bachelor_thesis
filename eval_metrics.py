@@ -69,9 +69,9 @@ def calc_perc_metric(valid_ds,learn):
         if percentil < 1:
             top1 += 1/len(valid_ds)
 
-    top1 = top1.detach().cpu().numpy()
-    top5 = top5.detach().cpu().numpy()
-    top10 = top10.detach().cpu().numpy()
+    #top1 = top1.detach().cpu().numpy()
+    #top5 = top5.detach().cpu().numpy()
+    #top10 = top10.detach().cpu().numpy()
     print("top1",top1,"top5",top5,"top10",top10)
     return f"top1 {top1} top5 {top5} top10 {top10}\n"
 

@@ -10,6 +10,8 @@ import pandas as pd
 import scipy
 import pickle
 
+import scipy
+import scipy.spatial
 
 def save_pickle(input,filename):
     with open(filename, 'wb') as handle:
@@ -69,7 +71,7 @@ def post_load_normal(img,folder_name,dataset_root):
     
     rot_matrix = get_rotation_matrix(folder_name,dataset_root)
     img = (torch.tensor(img) @ torch.tensor(rot_matrix).float()).numpy()
-
+    img = (img + 1)/2
     img = torchvision.transforms.functional.to_tensor(img)
     return img
 

@@ -1,5 +1,4 @@
 #%%
-
 from matplotlib.pyplot import axis
 import torch
 import torch.nn as nn
@@ -14,16 +13,24 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torchvision.transforms.functional import InterpolationMode
 import numpy as np
-
-from data.seg_mask_loader import SegMaskLoader
 from data.seg_mask_loader import seg_mask_to_color
 from data.data_utils import get_train_val_test_split,open_image,\
     post_load_default,post_load_scene_depth,post_load_normal,\
     post_load_lightning,load_edge_tensor,load_pickle
 from data.brainloading import BrainLoader, BRAIN_FILE_NAME_TRAIN, BRAIN_FILE_NAME_VAL,BRAIN_FILE_NAME_TEST
 from data.list_transforms import LRandomHorizontalFlip,LRandomResizedCrop,LResize,LCompose,LCenterCrop
-
-import random
+import ntpath
+import numpy as np 
+import os
+import pickle
+import nilearn
+import nibabel as nib
+from nilearn import plotting
+from importance import noise_adj_global,eval_importance,im_save_images
+from data.data_utils import save_pickle
+from data.brainloading import load_reliability_mask,map2cube
+import time
+import os
 
 
 
@@ -31,7 +38,7 @@ def post_load_identity(img):
     return torchvision.transforms.functional.to_tensor(np.array(img))
 
 class BrainDatasetSceneDepth(Dataset):
-    def __init__(self,task,indicies,img_data_set_root,brain_dataset_root,brain_data_file,is_train,input_dim=30000,stable_loss=False):
+    def __init__(self,task,indicies,img_data_set_root,brain_dataset_root,brain_data_file,is_train,input_dim=30000,stable_loss=False,train_make_mean=False):
         self.img_data_set_root = img_data_set_root
         self.is_train = is_train
 
@@ -39,8 +46,13 @@ class BrainDatasetSceneDepth(Dataset):
         self.multiplier = 1
         
         if is_train:
-            self.multiplier = 3
+            if train_make_mean:
+                self.multiplier = 1
+            else:
+                self.multiplier = 3
+        
         self.stable_loss = stable_loss
+        self.train_make_mean = train_make_mean
 
         self.size = len(indicies)*self.multiplier
         img_size = 64
@@ -62,18 +74,23 @@ class BrainDatasetSceneDepth(Dataset):
     
         
         if self.is_train:
-            if not self.stable_loss:
-                x = self.brain_loader(index,n)
+            if not self.train_make_mean:
+                if not self.stable_loss:
+                    x = self.brain_loader(index,n)
+                else:
+                    a = magic[n][0]
+                    b = magic[n][1]
+                    
+                    x = []
+                    x += [self.brain_loader(index,a)[None]]
+                    x += [self.brain_loader(index,b)[None]]
+                    x = torch.cat(x,dim=0)
             else:
-                a = magic[n][0]
-                b = magic[n][1]
-                
                 x = []
-                x += [self.brain_loader(index,a)[None]]
-                x += [self.brain_loader(index,b)[None]]
-                x = torch.cat(x,dim=0)
-
-
+                x += [self.brain_loader(index,0)[None]]
+                x += [self.brain_loader(index,1)[None]]
+                x += [self.brain_loader(index,2)[None]]
+                x = torch.mean(torch.cat(x,dim=0),dim=0)
         else:
             x = []
             x += [self.brain_loader(index,0)[None]]
@@ -178,49 +195,8 @@ class GenWrapper(nn.Module):
 
 from stable_loss import StableLoss
 
-import argparse
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--train_gan', type=bool, help='enable gan training')
-parser.add_argument('--enable_stable_loss', type=bool, help='enable stable loss')
-parser.add_argument('--input_dim', type=int,default=4096, help='number of input dimensions')
-parser.add_argument('--task', type=str,default="scene_depth", help='task to perform')
-parser.add_argument('--pretrained_gen', type=str,default=None, help='file to pretrained generator')
-parser.add_argument('--learn_save_file', type=str,default=None, help='learner save file')
-parser.add_argument('--file_name', type=str,default=None, help='evaluation file name')
-parser.add_argument('--results_folder', type=str,default="results", help='results folder')
-
-
-
-args = parser.parse_args()
-args = vars(args)
-
-input_dim = args["input_dim"]
-task = args["task"]
-enable_stable_loss = args["enable_stable_loss"]
-train_gan = args["train_gan"]
-save_folder = args["results_folder"]
-
-file_name = args["file_name"]
-learn_save_file = args["learn_save_file"]
-if file_name is None:
-    file_name = f"trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})"
-print("**" + file_name +"**")
-#ntpath.basename(__file__)[:-3]
-
-
-pretrained_gen = args["pretrained_gen"] 
-
-if pretrained_gen is None:
-    pretrained_gen = f"{task}_gan_2000.pkl"
-
-
-learn_save_file = None
-if learn_save_file is None:
-    learn_save_file = file_name#f"{task}_learner"
-
-
-def main(task,input_dim):
+def main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen):
     train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
     train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss)#True
     valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
@@ -253,95 +229,154 @@ def main(task,input_dim):
             learn.fit(80)
     
     learn.save(learn_save_file)
+# %%
 
-#main(task,input_dim)    
+def after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance):
+    train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
+    train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss)#True
+    valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
+    
+    
+
+    importance_train = len(valid_ds)//2
+    im_train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,train_make_mean=True)#BrainDatasetSceneDepth(task,val[:importance_train],"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,True,input_dim=input_dim,stable_loss=False)
+    im_val_ds = valid_ds #BrainDatasetSceneDepth(task,val[importance_train:],"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim,stable_loss=False)
+    
+    #im_train_ds.brain_loader.BRAIN_DATA_ARRAY = im_train_ds.brain_loader.BRAIN_DATA_ARRAY[:importance_train]
+    #im_val_ds.brain_loader.BRAIN_DATA_ARRAY = im_val_ds.brain_loader.BRAIN_DATA_ARRAY[importance_train:]
+
+
+
+    #test_ds = BrainDatasetSceneDepth(task,test,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TEST,False,input_dim=input_dim)
+
+    #%%
+    dls = DataLoaders.from_dsets(train_ds, valid_ds, batch_size = 8,num_workers = 0,device="cuda:0")
+    model = GenWrapper(pretrained_gen,input_dim=input_dim)
+    loss_func = nn.MSELoss()
+    learn = Learner(dls,model,loss_func = loss_func)
+    learn.load(learn_save_file)
+    learn.model = learn.model.to("cuda:0")
+    learn.model.eval()
+    #%%
+
+    def try_remove(out_file):
+        try:
+            os.remove(out_file)
+        except:
+            pass
+        
+    def visualize_importance(importance,out_file,n_input,cmap=None):
+        def saveasnii(brain_mask,nii_save_path,nii_data):
+            img = nib.load(brain_mask)
+            print(img.shape)
+            nii_img = nib.Nifti1Image(nii_data, img.affine, img.header)
+            nib.save(nii_img, nii_save_path)
+
+        brain_data_root = "D:/Datasets/BrainData"
+        subject = 3
+        rel_mask = load_reliability_mask(brain_data_root,n = n_input,subject = subject)
+        out = np.zeros((100045))
+        out[rel_mask] = importance
+
+        nan_indices_path = os.path.join(brain_data_root + '/fMRI_data',f"sub{subject:02d}",'z_1_nan_indicesWB.npy')
+        mask_path = os.path.join(brain_data_root + '/fMRI_data',f"sub{subject:02d}",'mask.nii')
+                    
+        cube_data = map2cube(out,mask_path, nan_indices_path)
+        saveasnii(mask_path,"./temp.nii",cube_data)
+        try_remove(out_file)
+        time.sleep(2)
+        plotting.plot_glass_brain("./temp.nii",colorbar=True,cmap=cmap,output_file=out_file)
+
+    out = ""
+    if calc_importance:
+        im_noise_adjustment = noise_adj_global(im_train_ds,learn.model).numpy()
+        visualize_importance(im_noise_adjustment,save_folder+"/"+file_name+"_importance_vis.png",input_dim)
+
+        out += "eval_importance:\n"
+        splits = 8
+        keep_dims = []
+        for k in range(splits):
+            n_keep = input_dim - k*(input_dim//splits)
+            keep_dims += [n_keep]
+        for n_keep in keep_dims:
+            out += eval_importance(learn.model,im_val_ds,torch.tensor(im_noise_adjustment).to("cuda:0"),n_keep=n_keep)
+            im_save_images(torch.tensor(im_noise_adjustment),n_keep,save_folder,learn,valid_ds,f"importance_{n_keep}")
+
+        try_remove(save_folder+"/"+file_name+".html")
+        view = plotting.view_img_on_surf("./temp.nii", threshold='80%', surf_mesh='fsaverage') 
+        view.save_as_html(save_folder+"/"+file_name+".html") 
+
+        
+    print("valid_ds len",len(valid_ds))
+    out += f"valid_ds len {len(valid_ds)}\n"
+    #%%
+    from eval_metrics import run_all_metrics
+
+
+    out += run_all_metrics(save_folder,learn,valid_ds,file_name)
+
+    try_remove(save_folder+"/"+file_name+"_numbers.txt")
+    with open(save_folder+"/"+file_name+"_numbers.txt", 'w') as file:
+        file.write(out)
 # %%
 
 
-train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
-train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss)#True
-valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
-#test_ds = BrainDatasetSceneDepth(task,test,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TEST,False,input_dim=input_dim)
 
-#%%
-dls = DataLoaders.from_dsets(train_ds, valid_ds, batch_size = 8,num_workers = 0,device="cuda:0")
-model = GenWrapper(pretrained_gen,input_dim=input_dim)
-loss_func = nn.MSELoss()
-learn = Learner(dls,model,loss_func = loss_func)
-learn.load(learn_save_file)
-learn.model = learn.model.to("cuda:0")
-learn.model.eval()
-#%%
 
-import ntpath
-import numpy as np 
-import os
-import pickle
-import nilearn
-import nibabel as nib
-from nilearn import plotting
-from importance import noise_adj_global,eval_importance
+import click
 
-from data.data_utils import save_pickle
-from data.brainloading import load_reliability_mask,map2cube
-import time
-
-import os
-
-def try_remove(out_file):
+@click.command()
+@click.option('--skip_training', type=bool,default=False, help='create learner', metavar='BOOL')
+@click.option('--train_gan', type=bool,default=False, help='enable gan training',  metavar='BOOL')
+@click.option('--stable_loss', type=bool,default=False, help='enable stable loss', metavar='BOOL')
+@click.option('--input_dim', type=int,default=4096, help='number of input dimensions', metavar='INT')
+@click.option('--task', type=str,default="scene_depth", help='task to perform')
+@click.option('--pretrained_gen', type=str,default=None, help='file to pretrained generator')
+@click.option('--learn_save_file', type=str,default=None, help='learner save file')
+@click.option('--file_name', type=str,default=None, help='evaluation file name')
+@click.option('--results_folder', type=str,default="results", help='results folder')
+@click.option('--calc_importance', type=bool,default=False, help='calculate importance')
+def run_all(**args):
+    print(args)
+    input_dim = args["input_dim"]
+    task = args["task"]
+    enable_stable_loss = args["stable_loss"]
+    train_gan = args["train_gan"]
+    save_folder = args["results_folder"]
     try:
-        os.remove(out_file)
+        os.mkdir(save_folder + "/" + task)
     except:
         pass
+    save_folder = save_folder + "/" + task
     
-def visualize_importance(importance,out_file,n_input,cmap=None):
-    def saveasnii(brain_mask,nii_save_path,nii_data):
-        img = nib.load(brain_mask)
-        print(img.shape)
-        nii_img = nib.Nifti1Image(nii_data, img.affine, img.header)
-        nib.save(nii_img, nii_save_path)
+    try:
+        os.mkdir(save_folder + "/" + f"trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})")
+    except:
+        pass
+    save_folder = save_folder + "/" + f"trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})"
+    
 
-    brain_data_root = "D:/Datasets/BrainData"
-    subject = 3
-    rel_mask = load_reliability_mask(brain_data_root,n = n_input,subject = subject)
-    out = np.zeros((100045))
-    out[rel_mask] = importance
+    file_name = args["file_name"]
+    learn_save_file = args["learn_save_file"]
+    if file_name is None:
+        file_name = "out"
+    print("**" + file_name +"**")
+    #ntpath.basename(__file__)[:-3]
 
-    nan_indices_path = os.path.join(brain_data_root + '/fMRI_data',f"sub{subject:02d}",'z_1_nan_indicesWB.npy')
-    mask_path = os.path.join(brain_data_root + '/fMRI_data',f"sub{subject:02d}",'mask.nii')
-                
-    cube_data = map2cube(out,mask_path, nan_indices_path)
-    saveasnii(mask_path,"./temp.nii",cube_data)
-    try_remove(out_file)
-    time.sleep(2)
-    plotting.plot_glass_brain("./temp.nii",colorbar=True,cmap=cmap,output_file=out_file)
+    skip_training = args["skip_training"]
+    pretrained_gen = args["pretrained_gen"] 
+    calc_importance = args["calc_importance"]
+    if pretrained_gen is None:
+        pretrained_gen = f"{task}_gan_2000.pkl"
 
 
-
-im_noise_adjustment = noise_adj_global(valid_ds,learn.model).numpy()
-#%%
-
-visualize_importance(im_noise_adjustment,"noise_adj_importance_vis.png",input_dim)
-
-out = "eval_importance:\n"
-for n_keep in [30000,2900,2800,2700,2600,2500,2000,1500,1000,500,200,100]:
-    out += eval_importance(learn.model,valid_ds,torch.tensor(im_noise_adjustment).to("cuda:0"),n_keep=n_keep)
-
-print("valid_ds len",len(valid_ds))
-out += f"valid_ds len {len(valid_ds)}"
-#%%
-from eval_metrics import run_all_metrics
+    if learn_save_file is None:
+        learn_save_file = f"task({task})_trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})"
 
 
-out += run_all_metrics(save_folder,learn,valid_ds,file_name)
+    if not skip_training:
+        main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen)
+    after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance)
+        
 
-try_remove(save_folder+"/"+file_name+"_numbers.txt")
-with open(save_folder+"/"+file_name+"_numbers.txt", 'w') as file:
-    file.write(out)
-
-
-
-try_remove(save_folder+"/"+file_name+".html")
-view = plotting.view_img_on_surf("./temp.nii", threshold='80%', surf_mesh='fsaverage') 
-view.save_as_html(save_folder+"/"+file_name+".html") 
-# %%
+run_all()
