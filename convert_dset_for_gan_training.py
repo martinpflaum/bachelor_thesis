@@ -3,7 +3,7 @@ import sys
 import numpy
 from PIL import Image
 import numpy as np
-from data.data_utils import open_image,get_rotation_matrix
+from data.data_utils import open_image,get_rotation_matrix,rgb2gray,canny_edge
 import matplotlib.pyplot as plt
 import pandas as pd
 from torchvision import transforms
@@ -32,12 +32,21 @@ def transform_normal(folder_name,task,dataset_root):
     img = (torch.tensor(img) @ torch.tensor(rot_matrix).float()).numpy()
     img = (img +1)/2
     img = img.astype(np.float32)
+    img = np.clip(img * 255,0,255)
     
-    img = Image.fromarray((img * 256).astype(numpy.uint8))
+    img = Image.fromarray((img).astype(numpy.uint8), 'RGB')
     return img
 
-
-
+def transform_edge_tensor(name,task,dataset_root):
+    frame = 0
+    img = np.array(open_image(name,"default",dataset_root,frame = frame)).astype(np.float32)
+    img = rgb2gray(img)
+    img = canny_edge(img)
+    img = img.reshape(img.shape[0],img.shape[1],1)
+    img = (img.astype(np.float32) / 255)
+    img = np.clip(img * 255,0,255)[:,:]
+    img = Image.fromarray((img).astype(numpy.uint8))
+    return img
 #%%
 #F.hflip(img)
 #"D:/ImageDatasetBig"
@@ -95,8 +104,12 @@ folder_world_normal = "C:/Users/Martin/Desktop/gan_dset_world_normal"
 convert_all_folders(False,"big_img_set",transform_normal,"world_normal",folder_world_normal,img_dset_root,img_big_names)
 convert_all_folders(False,"brain_img_set",transform_normal,"world_normal",folder_world_normal,brain_dset_root,train)
 
-
 #%%
+gan_dset_edge = "C:/Users/Martin/Desktop/gan_dset_edge"
+convert_all_folders(False,"big_img_set",transform_edge_tensor,"edge",gan_dset_edge,img_dset_root,img_big_names)
+convert_all_folders(False,"brain_img_set",transform_edge_tensor,"edge",gan_dset_edge,brain_dset_root,train)
+
+
 #%%
 
 #%%

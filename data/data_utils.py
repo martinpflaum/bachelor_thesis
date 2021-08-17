@@ -131,7 +131,7 @@ def load_edge_tensor(name,data_set_root,frame = 0):
     img = rgb2gray(img)
     img = canny_edge(img)
     img = img.reshape(img.shape[0],img.shape[1],1)
-    img = (img.astype(np.float32) / 255) * 2 - 1 #normalize
+    img = (img.astype(np.float32) / 255) #* 2 - 1 #normalize
     img = torchvision.transforms.functional.to_tensor(img)
     return img
 
