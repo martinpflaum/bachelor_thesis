@@ -72,8 +72,9 @@ def eval_importance(model,val_ds,importance,n_keep,loss_func=nn.MSELoss()):
         loss = loss/len(val_ds)
         loss_out += loss
 
-
+    loss_out = loss_out.detach().cpu().numpy()
     print("n_keep: ",n_keep," loss: ",loss_out)
+    return f"n_keep: {n_keep} loss: {loss_out}\n"
 
 def im_save_single(importance,n_keep,save_folder,learn,valid_ds,test_name,k,save_k):
     learn.model = learn.model.to("cuda:0")

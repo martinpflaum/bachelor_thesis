@@ -14,7 +14,7 @@ def calc_random_metric(valid_ds,learn,num_iter=10,loss_func = nn.MSELoss()):
     num_iter = 10
     idx = np.arange(len(valid_ds))
     for z in range(num_iter):
-        print(f"iteration {z} of {num_iter}")
+        #print(f"iteration {z} of {num_iter}")
         loss_one_iter = 0
         np.random.shuffle(idx)
         for k in range(len(valid_ds)): 
@@ -28,7 +28,10 @@ def calc_random_metric(valid_ds,learn,num_iter=10,loss_func = nn.MSELoss()):
                 loss_one_iter += loss
         loss_one_iter = loss_one_iter / num_iter
         rand_loss += loss_one_iter
+
+    rand_loss = rand_loss.detach().cpu().numpy()
     print("rand_loss",rand_loss)
+    return f"rand_loss {rand_loss}\n"
 
 
 def calc_perc_metric(valid_ds,learn):
@@ -66,8 +69,11 @@ def calc_perc_metric(valid_ds,learn):
         if percentil < 1:
             top1 += 1/len(valid_ds)
 
+    top1 = top1.detach().cpu().numpy()
+    top5 = top5.detach().cpu().numpy()
+    top10 = top10.detach().cpu().numpy()
     print("top1",top1,"top5",top5,"top10",top10)
-
+    return f"top1 {top1} top5 {top5} top10 {top10}\n"
 
 
 def get_mean(valid_ds):
@@ -87,7 +93,9 @@ def get_mean_loss(valid_ds,loss_func = nn.MSELoss()):
             loss = loss_func(target,mean)
             loss = loss / len(valid_ds)
             loss_out += loss
+    loss_out = loss_out.detach().cpu().numpy()
     print("constant loss of dset: ",loss_out)
+    return f"constant loss of dset: {loss_out}\n"
 
 def save_single(save_folder,learn,valid_ds,test_name,k,save_k,reverse_func):
     learn.model = learn.model.to("cuda:0")
@@ -118,9 +126,30 @@ def save_images(save_folder,learn,valid_ds,test_name,idx = [124,168,3,4],reverse
         save_single(save_folder,learn,valid_ds,test_name,k,save_k,reverse_func)
 
 
+def eval_model(val_ds,learn,loss_func=nn.MSELoss()):
+    model = learn.model
+    model = model.to("cuda:0")
+    model = model.eval()
+    
+    loss_out = 0
+
+    for x_org,target in val_ds:
+        x_org = x_org.to("cuda:0")
+        out = model(x_org[None]).detach()
+        
+        loss = loss_func(out, target.to("cuda:0"))
+        loss = loss/len(val_ds)
+        loss_out += loss
+
+    loss_out = loss_out.detach().cpu().numpy()
+    print("model val loss: ",loss_out)
+    return f"model val loss: {loss_out}\n"
+
 def run_all_metrics(save_folder,learn,valid_ds,file_name,reverse_func=post_load_reverse_identity):    
     save_images(save_folder,learn,valid_ds,file_name,reverse_func=reverse_func)
-    get_mean_loss(valid_ds)
-    calc_perc_metric(valid_ds,learn)
-    calc_random_metric(valid_ds,learn)
-
+    out = ""
+    out += get_mean_loss(valid_ds)
+    out += calc_perc_metric(valid_ds,learn)
+    out += calc_random_metric(valid_ds,learn)
+    out += eval_model(valid_ds,learn)
+    return out
