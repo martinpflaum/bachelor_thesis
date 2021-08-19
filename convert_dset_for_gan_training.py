@@ -44,7 +44,7 @@ def transform_edge_tensor(name,task,dataset_root):
     img = canny_edge(img)
     img = img.reshape(img.shape[0],img.shape[1],1)
     img = (img.astype(np.float32) / 255)
-    img = np.clip(img * 255,0,255)[:,:]
+    img = np.clip(img * 255,0,255)[:,:,0]
     img = Image.fromarray((img).astype(numpy.uint8))
     return img
 #%%

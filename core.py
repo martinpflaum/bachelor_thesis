@@ -115,7 +115,7 @@ class BrainDatasetSceneDepth(Dataset):
             scene_depth = post_load_scene_depth(open_image(name,"scene_depth",self.img_data_set_root))
             y = scene_depth
         if self.task == "world_normal":
-            world_normal = post_load_normal(open_image(name,"world_normal",self.img_data_set_root),name,self.data_set_root)
+            world_normal = post_load_normal(open_image(name,"world_normal",self.img_data_set_root),name,self.img_data_set_root)
             y = world_normal
         if self.task == "lightning":
             lightning = post_load_lightning(open_image(name,"lightning",self.img_data_set_root))
@@ -322,21 +322,7 @@ def after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_
 
 
 
-
-import click
-
-@click.command()
-@click.option('--skip_training', type=bool,default=False, help='create learner', metavar='BOOL')
-@click.option('--train_gan', type=bool,default=False, help='enable gan training',  metavar='BOOL')
-@click.option('--stable_loss', type=bool,default=False, help='enable stable loss', metavar='BOOL')
-@click.option('--input_dim', type=int,default=4096, help='number of input dimensions', metavar='INT')
-@click.option('--task', type=str,default="scene_depth", help='task to perform')
-@click.option('--pretrained_gen', type=str,default=None, help='file to pretrained generator')
-@click.option('--learn_save_file', type=str,default=None, help='learner save file')
-@click.option('--file_name', type=str,default=None, help='evaluation file name')
-@click.option('--results_folder', type=str,default="results", help='results folder')
-@click.option('--calc_importance', type=bool,default=False, help='calculate importance')
-def run_all(**args):
+def run_all(args):
     print(args)
     input_dim = args["input_dim"]
     task = args["task"]
@@ -348,12 +334,16 @@ def run_all(**args):
     except:
         pass
     save_folder = save_folder + "/" + task
+
+    sub_folder = f"trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})"
+    if not args["sub_folder"] is None:
+        sub_folder = args["sub_folder"]
     
     try:
-        os.mkdir(save_folder + "/" + f"trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})")
+        os.mkdir(save_folder + "/" + sub_folder)
     except:
         pass
-    save_folder = save_folder + "/" + f"trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})"
+    save_folder = save_folder + "/" + sub_folder
     
 
     file_name = args["file_name"]
@@ -378,5 +368,3 @@ def run_all(**args):
         main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen)
     after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance)
         
-
-run_all()
