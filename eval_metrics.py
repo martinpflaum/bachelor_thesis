@@ -105,12 +105,15 @@ def save_single(save_folder,learn,valid_ds,test_name,k,save_k,reverse_func):
         input = valid_ds[k][0]
         pred_scene_depth = learn.model(input[None].to("cuda:0"))[0]
     img_vis = reverse_func(pred_scene_depth)
+    img_vis = np.clip(img_vis,0,1)
     if img_vis.shape[2] == 1:
         img_vis = img_vis[:,:,0]
 
     img = valid_ds[k][1]
     scene_depth = img[None]
     img_vis_target = reverse_func(scene_depth[0])
+    img_vis_target = np.clip(img_vis_target,0,1)
+    
     if img_vis_target.shape[2] == 1:
         img_vis_target = img_vis_target[:,:,0]
 

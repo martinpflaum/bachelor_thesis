@@ -3,7 +3,7 @@ import torch
 import copy
 from matplotlib import pyplot as plt
 from data.data_utils import post_load_reverse_depth
-
+import numpy as np
 import torch
 import torch.nn as nn
 def noise_adjustment_local(x_org,model,var=0.3,num_iters=10,bs=10,l_func=nn.MSELoss()):
@@ -94,12 +94,16 @@ def im_save_single(importance,n_keep,save_folder,learn,valid_ds,test_name,k,save
         input = valid_ds[k][0]
         input[throw_args] = 0#torch.randn_like(input[throw_args])
         pred_scene_depth = learn.model(input[None].to("cuda:0"))[0]
-    img_vis = post_load_reverse_depth(pred_scene_depth)[:,:,0]
-
+    img_vis = post_load_reverse_depth(pred_scene_depth)
+    img_vis = np.clip(img_vis,0,1)
+    if img_vis.shape[2] == 1:
+        img_vis_target = img_vis[:,:,0]
     img = valid_ds[k][1]
     scene_depth = img[None]
-    img_vis_target = post_load_reverse_depth(scene_depth[0])[:,:,0]
-
+    img_vis_target = post_load_reverse_depth(scene_depth[0])
+    img_vis_target = np.clip(img_vis_target,0,1)
+    if img_vis_target.shape[2] == 1:
+        img_vis_target = img_vis_target[:,:,0]
     plt.imsave(f"{save_folder}/{test_name}_{save_k}.png",img_vis)
     plt.imsave(f"{save_folder}/target_{save_k}.png",img_vis_target)
 
