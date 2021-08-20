@@ -97,7 +97,7 @@ def im_save_single(importance,n_keep,save_folder,learn,valid_ds,test_name,k,save
     img_vis = post_load_reverse_depth(pred_scene_depth)
     img_vis = np.clip(img_vis,0,1)
     if img_vis.shape[2] == 1:
-        img_vis_target = img_vis[:,:,0]
+        img_vis = img_vis[:,:,0]
     img = valid_ds[k][1]
     scene_depth = img[None]
     img_vis_target = post_load_reverse_depth(scene_depth[0])
