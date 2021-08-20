@@ -196,7 +196,7 @@ class GenWrapper(nn.Module):
 from stable_loss import StableLoss
 
 
-def main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen):
+def main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,lr=None):
     train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
     train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss)#True
     valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
@@ -218,15 +218,15 @@ def main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn
                 apply_mod(learn.model.gen, partial(set_absolute_grad, b = True))
                 
             loss_func.alpha = alpha
-            learn.fit(epochs)
+            learn.fit(epochs,lr=lr)
     else:
         if train_gan:
-            learn.fit(60)
+            learn.fit(60,lr=lr)
             apply_mod(learn.model.gen, partial(set_absolute_grad, b = True))
-            learn.fit(20)
+            learn.fit(20,lr=lr)
                 
         else:
-            learn.fit(80)
+            learn.fit(80,lr=lr)
     
     learn.save(learn_save_file)
 # %%
@@ -360,11 +360,15 @@ def run_all(args):
         pretrained_gen = f"{task}_gan_2000.pkl"
 
 
+    lr = None
+    if "lr" in list(args.keys()):
+        lr = args["lr"]
+
     if learn_save_file is None:
         learn_save_file = f"task({task})_trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})"
 
 
     if not skip_training:
-        main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen)
+        main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,lr)
     after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance)
         
