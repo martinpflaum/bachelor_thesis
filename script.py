@@ -25,8 +25,7 @@ def run_x5all(task,lr=None):
 
 
 
-run_x5all(task = 'edges',lr=0.0001)
-#%%
+run_x5all(task = 'edges',lr=0.0002)
 """
 run_x5all(task = 'world_normal')
 
