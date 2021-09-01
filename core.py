@@ -37,14 +37,29 @@ import os
 def post_load_identity(img):
     return torchvision.transforms.functional.to_tensor(np.array(img))
 
+
+def depth_calc_std_mean(img_data_set_root):
+    train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
+    out = []
+    for name in train:
+        scene_depth = post_load_scene_depth(open_image(name,"scene_depth",img_data_set_root)).reshape(-1)
+        out += [scene_depth]
+    out = torch.cat(out).reshape(-1)
+    return torch.std_mean(out, unbiased=False)
 class BrainDatasetSceneDepth(Dataset):
-    def __init__(self,task,indicies,img_data_set_root,brain_dataset_root,brain_data_file,is_train,input_dim=30000,stable_loss=False,train_make_mean=False):
+    def __init__(self,task,indicies,img_data_set_root,brain_dataset_root,brain_data_file,is_train,input_dim=30000,stable_loss=False,train_make_mean=False,make_input_depth=False):
+        if make_input_depth:
+            train_make_mean = True
         self.img_data_set_root = img_data_set_root
         self.is_train = is_train
 
         #self.multiplier = 6
+        self.make_input_depth = make_input_depth
         self.multiplier = 1
-        
+
+        if self.make_input_depth:
+            img_std,img_mean = depth_calc_std_mean(img_data_set_root)
+            self.img_in_transform = torchvision.transforms.Normalize(img_mean,img_std)
         if is_train:
             if train_make_mean:
                 self.multiplier = 1
@@ -62,7 +77,7 @@ class BrainDatasetSceneDepth(Dataset):
 
         self.indicies = indicies
         self.task = task
-        
+
     def __len__(self):
         #print("get_len")
         return self.size
@@ -131,7 +146,8 @@ class BrainDatasetSceneDepth(Dataset):
             y = reflectance
         
         y = self.transform([y])[0]
-
+        if self.make_input_depth:
+            x = self.img_in_transform(y).reshape(-1)# self.img_in_transform
         return x,y
 
 
@@ -196,18 +212,18 @@ class GenWrapper(nn.Module):
 from stable_loss import StableLoss
 
 
-def main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,lr=None):
+def main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,lr=None,img_loss_func=nn.MSELoss(),make_input_depth=False):
     train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
-    train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss)#True
-    valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
+    train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss,make_input_depth=make_input_depth)#True
+    valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim,make_input_depth=make_input_depth)
 
     dls = DataLoaders.from_dsets(train_ds, valid_ds, batch_size = 16,num_workers = 0,device="cuda:0")
     model = GenWrapper(pretrained_gen,input_dim=input_dim)
     loss_func = None
     if enable_stable_loss:
-        loss_func = StableLoss()
+        loss_func = StableLoss(img_loss_func)
     else:
-        loss_func = nn.MSELoss()
+        loss_func = img_loss_func
     
     learn = Learner(dls,model,loss_func = loss_func)
     apply_mod(learn.model.gen, partial(set_absolute_grad, b = False))
@@ -231,10 +247,10 @@ def main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn
     learn.save(learn_save_file)
 # %%
 
-def after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance):
+def after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance,make_input_depth=False):
     train,val,test = get_train_val_test_split("./data_splits/train_test_split.csv")
-    train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss)#True
-    valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim)
+    train_ds = BrainDatasetSceneDepth(task,train,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_TRAIN,True,input_dim=input_dim,stable_loss=enable_stable_loss,make_input_depth=make_input_depth)#True
+    valid_ds = BrainDatasetSceneDepth(task,val,"D:/Datasets/BrainData/rendered_animations_final","D:/Datasets/BrainData",BRAIN_FILE_NAME_VAL,False,input_dim=input_dim,make_input_depth=make_input_depth)
     
     
 
@@ -367,8 +383,18 @@ def run_all(args):
     if learn_save_file is None:
         learn_save_file = f"task({task})_trgan({train_gan})_stloss({enable_stable_loss})_indim({input_dim})"
 
+    make_input_depth=False
+    if "make_input_depth" in list(args.keys()):
+        make_input_depth = args["make_input_depth"]
+
+    img_loss_func = nn.MSELoss()
+    if "perceptual_loss" in list(args.keys()):
+        if args[ "perceptual_loss"]:
+            img_loss_func = load_pickle("perceptual_loss.pth")
+            img_loss_func = img_loss_func.to("cuda:0")
+
 
     if not skip_training:
-        main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,lr)
-    after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance)
+        main(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,lr,make_input_depth=make_input_depth,img_loss_func=img_loss_func)
+    after_training(task,input_dim,enable_stable_loss,train_gan,save_folder,file_name,learn_save_file,pretrained_gen,calc_importance,make_input_depth=make_input_depth)
         
