@@ -64,16 +64,54 @@ def get_default(index):
     return img
 
 
-# %%
-index = 0
-# %%
-img = get_edges(index)
-# %%
-img = get_reflectance(index)
-#%%
+def get_flow(index):
+    folder_name = f"Anim_{index+1:05}"
+    img = open_image(folder_name,"flow",dataset_root)
+    img = np.array(img)/255
+    img = np.clip(img,0,1)
+    return img
 
-plt.imshow(get_normal(index))
+
+def get_depth(index):
+    folder_name = f"Anim_{index+1:05}"
+    img = open_image(folder_name,"scene_depth",dataset_root)
+    img = np.array(img)
+    img = img[:,:,0] + img[:,:,1] * 256
+    img = img.astype(np.float32)
+    img = img.reshape([img.shape[0],img.shape[1],1])
+    maximum_dist = 256 * 4#256*3#
+
+    #normalize
+
+    #img = torchvision.transforms.functional.to_tensor((img / (maximum_dist / 2) )  - 1)
+    img = img / (maximum_dist) 
+    return img[:,:,0]
+
+
 # %%
+def vert_grid(func,idx):
+    out = []
+    for k in idx:
+        out += [func(k)]
+    return np.concatenate(out,axis=1)
+
+
+def save_images(func):
+    img0 = vert_grid(func,[104,1004,509])
+    img1 = vert_grid(func,[304,1406,3510])
+
+    out = [img0,img1]
+    img = np.concatenate(out,axis=0)
+
+    plt.imsave(func.__name__[4:]+".png",img.astype(float))
+
+funcs = [get_default,get_edges,get_flow,get_lightning,get_normal,get_reflectance,get_seg_img,get_depth]
+for func in funcs:
+    save_images(func)
+
+# %%
+
+
 
 import tempfile
 import pandas as pd
