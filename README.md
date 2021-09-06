@@ -1,5 +1,5 @@
 # bachelor_thesis
-Hello we used some code from https://github.com/NVlabs/stylegan2-ada-pytorch. I am not related to nvdia in any way. It is important the code from nvdia is under their licence and not under MIT. Information about this licence can be found in nvlicence.txt
+Hello we used some code from https://github.com/NVlabs/stylegan2-ada-pytorch. I am not related to nvdia in any way. It is important this code in generall is licence under the licence found in nvlicence.txt.
 
 
 With '''
@@ -10,4 +10,6 @@ you can run the programm with different settings. The results will be automatica
 
 Information about licence.
 
-All code that i wrote is of course under MIT licence. All code in core.py all files in data_utils and data, and importance.py is under MIT licence i probably will write the licence specifically in every file. You also can write an issue if you are not sure about the licence
+All code that i wrote is of course also licence under MIT licence. All code in core.py all files in data_utils and data, and importance.py is under MIT licence i probably will write the licence specifically in every file. You also can write an issue if you are not sure about the licence
+
+
