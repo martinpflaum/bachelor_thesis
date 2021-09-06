@@ -7,5 +7,5 @@ I changed some stuff in the nvdia code since i had problems with the jit compile
 With '''
 python script.py 
 '''
-the main program will be runned with different settings sequentially. The results will be automatically put in the results folder. In core.py is the main functionality. If you are looking how segmentation and normals should be preprocessed, look at data_utils/*. 
+the main program will be runned with different settings sequentially. The results will be automatically put in the results folder. In core.py is the main functionality. If you are looking how segmentation and normals should be preprocessed, look at data_utils/*. In the experimental_and_data_vis folder is code that is not used by the main program. There i put some ideas that didn't make it into the final version and code for creating images (the creating images code only works if it is put the main folder). 
 
