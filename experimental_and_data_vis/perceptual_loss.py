@@ -21,29 +21,34 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+#%%
 import torch
 import torch.nn as nn
+import torchvision
 
-class StableLoss(nn.Module):
-    def __init__(self,loss_func=nn.MSELoss(),alpha=0.):
-        super(StableLoss,self).__init__()
-    
-        self.loss_func = loss_func
-        self.latent_loss_func = nn.MSELoss()
-        self.alpha = alpha
-    def forward(self,xpred,target):
-        if isinstance(xpred,tuple):
-            pred = xpred[0]
-            latent = xpred[1]
-            latent_target = xpred[2].detach()
-            
-        else:
-            return self.loss_func(xpred,target)
-        B = target.shape[0]
-        loss = 0
+class PerceptualLoss(nn.Module):
+    def __init__(self,model,mean,std,img_loss_func=nn.MSELoss(),latent_loss_func=nn.MSELoss()):
+        super().__init__()
         
-        latent_loss = self.latent_loss_func(latent,latent_target)*self.alpha
-        loss += latent_loss
-        loss += self.loss_func(pred,target)#/2
+        
+        self.model = model
+
+
+        self.latent_loss_func = latent_loss_func
+        self.img_loss_func = img_loss_func
+        
+        self.transform = torchvision.transforms.Normalize(mean,std)
+    def forward(self,pred,target):
+        loss = 0
+        loss += self.img_loss_func(pred,target)
+        
+        pred = self.transform(pred)
+        target = self.transform(target)
+
+        pred = self.model(pred)
+        target = self.model(target)
+
+        loss += self.latent_loss_func(pred,target)
         
         return loss
+
