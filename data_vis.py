@@ -210,3 +210,30 @@ data[:,1] = - data[:,1] + yh
 # %%
 data
 # %%
+import PIL
+import PIL.Image as Image
+dset_root = "D:/one_million_cubes"
+k = 4
+def get_million(k):
+    file_name = f"scene_depth_rand_{k:07}.png"
+    return np.array(Image.open(f"{dset_root}/{file_name}"))
+
+
+
+
+def save_images(func):
+    out = []
+    out += [vert_grid(func,[27,8048,9004,12509])]
+    out += [vert_grid(func,[9274,268,1206,13510])]
+    out += [vert_grid(func,[499,7024,1496,11510])]
+    out += [vert_grid(func,[9876,30224,1003,32510])]
+    
+    
+    img = np.concatenate(out,axis=0)
+
+    plt.imsave(func.__name__[4:]+".png",img.astype(float))
+
+save_images(get_million)
+
+
+# %%
