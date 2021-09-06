@@ -10,4 +10,4 @@ you can run the programm with different settings. The results will be automatica
 
 Information about licence.
 
-All code that i wrote is of course under MIT licence. The code of the nvidea 
+All code that i wrote is of course under MIT licence. All code in core.py all files in data_utils and data, and importance.py is under MIT licence i probably will write the licence specifically in every file. You also can write an issue if you are not sure about the licence
